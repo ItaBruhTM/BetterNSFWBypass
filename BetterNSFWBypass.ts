@@ -1,37 +1,47 @@
+// SPDX-License-Identifier: MIT
+// ==UserPlugin==
 // @name         BetterNSFWBypass
-// @description  Bypassa il controllo NSFW per canali senza età verificata
+// @description  Bypasses age restriction for NSFW channels by enabling nsfwAllowed.
 // @version      1.0.0
-// @author       Eld3rly
+// @author       Eld3rly (converted by ChatGPT)
 // @source       https://github.com/Eld3rly/BetterNSFWBypass
+// @license      MIT
+// ==/UserPlugin==
 
-import { findModule } from "@vendetta/webpack";
-import { before } from "@vendetta/patcher";
-import { showToast } from "@vendetta/ui/toasts";
+import { definePlugin } from "@vencord/plugins";
+import { findModule } from "@cumcord/modules/webpack";
 
-let unpatch: () => void;
+export default definePlugin({
+    name: "BetterNSFWBypass",
+    description: "Bypasses age restriction for NSFW channels by enabling nsfwAllowed.",
+    
+    // Funzione che forza `nsfwAllowed` sull'utente
+    bypassNSFW() {
+        const userStore = findModule(m => m?.getCurrentUser);
+        const currentUser = userStore?.getCurrentUser?.();
 
-export default {
-    onLoad() {
-        const userModule = findModule(m => typeof m?.getCurrentUser === "function");
-        const currentUser = userModule?.getCurrentUser?.();
-        if (!currentUser) {
-            showToast("Utente non trovato", 1);
-            return;
+        if (currentUser && typeof currentUser.nsfwAllowed === "boolean") {
+            currentUser.nsfwAllowed = true;
+            console.log("[BetterNSFWBypass] NSFW bypass applied.");
+        } else {
+            console.warn("[BetterNSFWBypass] Could not apply NSFW bypass: user not found or property missing.");
         }
-
-        // Patcha temporaneamente per forzare il flag nsfwAllowed
-        unpatch = before("getCurrentUser", userModule, (_, res) => {
-            if (res) res.nsfwAllowed = true;
-        });
-
-        // Imposta direttamente il flag una volta per sicurezza
-        currentUser.nsfwAllowed = true;
-
-        showToast("BetterNSFWBypass attivo", 0);
     },
 
-    onUnload() {
-        if (unpatch) unpatch();
-        showToast("BetterNSFWBypass disattivato", 1);
+    // Avvia il plugin
+    start() {
+        this.bypassNSFW();
+
+        // Anche al cambio di canale, riapplica il bypass
+        this.unpatch = findModule(m => m?.getChannelId)?.addChangeListener?.(() => {
+            this.bypassNSFW();
+        });
+    },
+
+    // Ferma il plugin
+    stop() {
+        if (this.unpatch) {
+            findModule(m => m?.getChannelId)?.removeChangeListener?.(this.unpatch);
+        }
     }
-};
+});
